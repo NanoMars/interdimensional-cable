@@ -1,4 +1,5 @@
 #define TAU 6.28318
+#define PI  3.14159
 
 float hash(vec2 p) {
     return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
@@ -51,20 +52,19 @@ float pattern(vec2 uv, float t)
     return step(0.5, hash(vec2(stripe + cell * 50.0, row + tick)));
 }
 
-// ---------- 8 ways to bend space ----------
 vec2 warp(vec2 p, float type, float s, float t) {
     float a = h1(s, 1.0), b = h1(s, 2.0);
-    if (type < 1.0) return p * (0.5 + 2.0 * a);                                   // zoom
+    if (type < 1.0) return p * (0.5 + 2.0 * a);
     if (type < 2.0) return vec2(atan(p.y, p.x) / TAU + 0.5, length(p))
-                         * vec2(1.0 + floor(a * 5.0), 1.0 + 3.0 * b);              // polar
-    if (type < 3.0) { float r = max(length(p), 1e-3);                              // log spiral
+                         * vec2(1.0 + floor(a * 5.0), 1.0 + 3.0 * b);
+    if (type < 3.0) { float r = max(length(p), 1e-3);
         return vec2(atan(p.y, p.x) / TAU * (1.0 + floor(a * 4.0)) + log(r) * (b - 0.5) * 2.0,
                     log(r) - t * 0.3); }
-    if (type < 4.0) return p / max(dot(p, p), 0.01) * (0.2 + 0.5 * a);           // inside out
-    if (type < 5.0) { p = rot(a * TAU) * p;                                        // tiled
+    if (type < 4.0) return p / max(dot(p, p), 0.01) * (0.2 + 0.5 * a);
+    if (type < 5.0) { p = rot(a * TAU) * p;
         return fract(p * (2.0 + floor(b * 6.0))) - 0.5; }
-    if (type < 6.0) return p + (0.05 + 0.2 * b) * sin(p.yx * (2.0 + 8.0 * a) + t * 2.0); // ripple
-    if (type < 7.0) {                                                              // fractal fold
+    if (type < 6.0) return p + (0.05 + 0.2 * b) * sin(p.yx * (2.0 + 8.0 * a) + t * 2.0);
+    if (type < 7.0) {
         vec2 k = vec2(0.4 + 0.4 * a, 0.3 + 0.5 * b);
         for (int i = 0; i < 3; i++) {
             p = rot(1.3 + float(i) * (0.5 + a * 2.0) + t * 0.2) * p;
@@ -73,21 +73,26 @@ vec2 warp(vec2 p, float type, float s, float t) {
         }
         return p;
     }
-    vec2 q = vec2(fbm(p * 1.5 + t), fbm(p * 1.5 + 5.2 - t));                     // liquid
+    vec2 q = vec2(fbm(p * 1.5 + t), fbm(p * 1.5 + 5.2 - t));
     return p + (0.5 + 1.5 * a) * (q - 0.5);
 }
 
-// ---------- 7 things to fill space with ----------
+// second warp slot, which is sometimes switched off
+vec2 warpMaybe(vec2 p, float s, float t) {
+    if (h1(s, 23.0) < 0.4) return p;
+    return warp(p, floor(h1(s, 22.0) * 8.0), s + 7.0, t);
+}
+
 float fill(vec2 p, float type, float s, float t) {
     float a = h1(s, 3.0), b = h1(s, 4.0);
-    if (type < 1.0) return pattern(p * 0.5 + 0.5, t);                              // barcode
-    if (type < 2.0) return step(0.5, fract(fbm(p * (1.0 + 2.0 * a) + t * 0.3) * (4.0 + 12.0 * b))); // contours
-    if (type < 3.0) { vec2 v = voronoi(p * (2.0 + 6.0 * a) + t * 0.3);             // cells
+    if (type < 1.0) return pattern(p * 0.5 + 0.5, t);
+    if (type < 2.0) return step(0.5, fract(fbm(p * (1.0 + 2.0 * a) + t * 0.3) * (4.0 + 12.0 * b)));
+    if (type < 3.0) { vec2 v = voronoi(p * (2.0 + 6.0 * a) + t * 0.3);
         return b < 0.5 ? smoothstep(0.05, 0.4, v.x) : v.y; }
-    if (type < 4.0) return 0.5 + 0.5 * sin(length(p) * (10.0 + 40.0 * a) - t * (2.0 + 6.0 * b)); // rings
-    if (type < 5.0) return step(0.45 + 0.1 * sin(t), noise(p * (3.0 + 20.0 * a) + t));            // blobs
-    if (type < 6.0) return 0.5 + 0.5 * sin(p.x * (5.0 + 30.0 * a) + t) * sin(p.y * (5.0 + 30.0 * b) - t * 1.3); // interference
-    return fbm(p * (1.0 + 3.0 * a) + t * 0.2);                                     // fog
+    if (type < 4.0) return 0.5 + 0.5 * sin(length(p) * (10.0 + 40.0 * a) - t * (2.0 + 6.0 * b));
+    if (type < 5.0) return step(0.45 + 0.1 * sin(t), noise(p * (3.0 + 20.0 * a) + t));
+    if (type < 6.0) return 0.5 + 0.5 * sin(p.x * (5.0 + 30.0 * a) + t) * sin(p.y * (5.0 + 30.0 * b) - t * 1.3);
+    return fbm(p * (1.0 + 3.0 * a) + t * 0.2);
 }
 
 vec3 harsh(float i) {
@@ -100,64 +105,84 @@ vec3 harsh(float i) {
     return vec3(1.0, 0.3, 0.8);
 }
 
-// ---------- 5 ways to colour it ----------
 vec3 colourise(float v, float type, float s, vec2 p) {
-    if (type < 1.0) { float ia = floor(h1(s, 5.0) * 37.0);                         // two clashing colours
+    if (type < 1.0) { float ia = floor(h1(s, 5.0) * 37.0);
         return mix(harsh(ia), harsh(ia + 1.0 + floor(h1(s, 6.0) * 5.0)), v); }
-    if (type < 2.0) { vec3 d = vec3(h1(s, 10.0), h1(s, 11.0), h1(s, 12.0));        // random gradient
+    if (type < 2.0) { vec3 d = vec3(h1(s, 10.0), h1(s, 11.0), h1(s, 12.0));
         return 0.5 + 0.5 * cos(TAU * (v * (0.5 + 2.0 * h1(s, 7.0)) + d)); }
-    if (type < 3.0) { float lv = 2.0 + floor(h1(s, 13.0) * 4.0);                   // posterised mono
+    if (type < 3.0) { float lv = 2.0 + floor(h1(s, 13.0) * 4.0);
         return vec3(floor(v * lv) / (lv - 1.0)) * mix(vec3(1.0), vec3(1.0, 0.9, 0.75), h1(s, 14.0)); }
-    if (type < 4.0) return vec3(v, fract(v * 3.0 + p.x), fract(v * 7.0 - p.y));    // channel scramble
-    return vec3(1.0 - v) * vec3(0.9, 0.82, 0.72) + vec3(0.2, 0.9, 0.7) * pow(v, 8.0); // bone negative
+    if (type < 4.0) return vec3(v, fract(v * 3.0 + p.x), fract(v * 7.0 - p.y));
+    return vec3(1.0 - v) * vec3(0.9, 0.82, 0.72) + vec3(0.2, 0.9, 0.7) * pow(v, 8.0);
 }
 
-vec3 scene(vec2 p, float s, float time) {
-    // how time behaves in this scene
+float timeMode(float s) {
     float tm = h1(s, 20.0);
-    float t = tm < 0.15 ? 0.0                              // frozen
-            : tm < 0.3  ? -time                            // backwards
-            : tm < 0.45 ? time * 4.0                       // fast
-            : tm < 0.55 ? floor(time * 6.0) / 2.0          // jerky
-            : time;
+    if (tm < 0.15) return h1(s, 26.0) * 100.0;   // frozen at a random moment
+    if (tm < 0.3)  return -iTime;                // backwards
+    if (tm < 0.45) return iTime * 4.0;           // fast
+    if (tm < 0.55) return floor(iTime * 6.0) / 2.0; // jerky
+    return iTime;
+}
 
-    vec2 q = warp(p, floor(h1(s, 21.0) * 8.0), s, t);
-    if (h1(s, 23.0) > 0.4) q = warp(q, floor(h1(s, 22.0) * 8.0), s + 7.0, t); // sometimes chain two
-    float v = clamp(fill(q, floor(h1(s, 24.0) * 7.0), s, t), 0.0, 1.0);
-    return colourise(v, floor(h1(s, 25.0) * 5.0), s, q);
+// One gene: returns (old seed, new seed, how far the change has got at this pixel)
+vec3 gene(float id, vec2 p) {
+    // its own lopsided clock, which can even stall or slip backwards
+    float rate = 0.15 + 0.4 * hash(vec2(id, 99.0));
+    float c = iTime * rate
+            + 0.6 * sin(iTime * (0.21 + 0.07 * id) + id * 2.3)
+            + 0.3 * sin(iTime * (0.77 + 0.11 * id) + id * 5.1);
+    float seg = floor(c), f = fract(c);
+    float key = seg + id * 100.0;
+
+    // every change has its own timing: some snap, some take ages
+    float start = 0.7 * h1(key, 1.0);
+    float len = mix(0.02, 1.0 - start, h1(key, 2.0));
+    float w = smoothstep(start, start + len, f);
+
+    // and it creeps across the screen instead of happening everywhere at once
+    float spread = 2.0 * h1(key, 3.0);
+    float n = noise(p * (1.0 + 4.0 * h1(key, 4.0)) + seg + iTime * 0.1);
+    w = clamp(w * (1.0 + spread) - spread * n, 0.0, 1.0);
+
+    return vec3(key - 1.0, key, w);
 }
 
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
-    vec2 p = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
+    vec2 sp = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
 
-    // a clock that speeds up and slows down unevenly, so cuts never fall into a rhythm
-    float clock = iTime * 0.7 + 0.5 * sin(iTime * 0.37) + 0.35 * sin(iTime * 1.13) + 0.03 * sin(iTime * 2.9);
-    float seg = floor(clock);
-    float local = fract(clock);
+    // gene 5: zoom and rotation of the whole thing
+    vec3 gz = gene(5.0, sp);
+    float zoom = mix(exp2(h1(gz.x, 50.0) * 3.0 - 1.5), exp2(h1(gz.y, 50.0) * 3.0 - 1.5), gz.z);
+    float ang  = mix(h1(gz.x, 51.0) * TAU, h1(gz.y, 51.0) * TAU, gz.z);
+    vec2 p = rot(ang) * sp * zoom;
 
-    vec3 oldCol = scene(p, seg - 1.0, iTime);
-    vec3 newCol = scene(p, seg, iTime);
+    // gene 4: how time behaves
+    vec3 gt = gene(4.0, sp);
+    float t = mix(timeMode(gt.x), timeMode(gt.y), gt.z);
 
-    // 5 ways for the next scene to arrive
-    float tt = h1(seg, 30.0);
-    float prog = clamp(local * (1.0 + 9.0 * h1(seg, 31.0)), 0.0, 1.0);
-    float m;
-    if (tt < 0.25) m = 1.0;                                                        // hard cut
-    else if (tt < 0.45) m = step(fbm(p * 3.0 + seg), prog);                        // dissolves through noise
-    else if (tt < 0.6) {                                                           // grows from a random point
-        vec2 c = vec2(h1(seg, 32.0), h1(seg, 33.0)) - 0.5;
-        m = step(length(p - c) + 0.1 * noise(p * 10.0), prog * 1.5);
-    }
-    else if (tt < 0.75) m = step(hash(floor(fragCoord / (4.0 + 28.0 * h1(seg, 34.0))) + seg), prog); // block decay
-    else m = step(1.0 - prog, dot(oldCol, vec3(0.333)));                            // infection: brightest parts turn first
+    // gene 0: first warp. Halfway through a change, the two warps get multiplied together
+    vec3 g0 = gene(0.0, sp);
+    vec2 qa = warp(p, floor(h1(g0.x, 21.0) * 8.0), g0.x, t);
+    vec2 qb = warp(p, floor(h1(g0.y, 21.0) * 8.0), g0.y, t);
+    vec2 q = mix(qa, qb, g0.z) + sin(PI * g0.z) * h1(g0.y, 60.0) * qa * qb;
 
-    vec3 col = mix(oldCol, newCol, m);
+    // gene 1: optional second warp
+    vec3 g1 = gene(1.0, sp);
+    q = mix(warpMaybe(q, g1.x, t), warpMaybe(q, g1.y, t), g1.z);
 
-    // tiny unpredictable events
-    float micro = floor(iTime * 7.0);
-    if (h1(micro, 40.0) > 0.93) col = abs(newCol - oldCol);   // the two scenes collide
-    if (h1(micro, 41.0) > 0.96) col = col.gbr;                // colour channels swap
+    // gene 2: what fills space. Halfway states wrap around into something new
+    vec3 g2 = gene(2.0, sp);
+    float va = clamp(fill(q, floor(h1(g2.x, 24.0) * 7.0), g2.x, t), 0.0, 1.0);
+    float vb = clamp(fill(q, floor(h1(g2.y, 24.0) * 7.0), g2.y, t), 0.0, 1.0);
+    float v = mix(va, vb, g2.z);
+    v = mix(v, fract(va + vb + t * 0.1), sin(PI * g2.z) * h1(g2.y, 61.0));
+
+    // gene 3: colour
+    vec3 g3 = gene(3.0, sp);
+    vec3 col = mix(colourise(v, floor(h1(g3.x, 25.0) * 5.0), g3.x, q),
+                   colourise(v, floor(h1(g3.y, 25.0) * 5.0), g3.y, q), g3.z);
 
     fragColor = vec4(col, 1.0);
 }
