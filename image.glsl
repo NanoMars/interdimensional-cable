@@ -2,15 +2,27 @@ float hash(vec2 p) {
     return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
 }
 
-// harsh limited palette instead of a smooth rainbow
-vec3 palette(float i) {
-    i = mod(floor(i), 6.0);
-    if (i < 1.0) return vec3(0.0);
-    if (i < 2.0) return vec3(1.0);
-    if (i < 3.0) return vec3(1.0, 0.05, 0.1);   // acid red
-    if (i < 4.0) return vec3(0.1, 0.2, 1.0);    // electric blue
-    if (i < 5.0) return vec3(0.6, 1.0, 0.0);    // toxic green
-    return vec3(1.0, 0.3, 0.8);                 // hot pink
+// smooth noise: random values blended between grid points
+float noise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+// layered noise, each layer smaller and rotated
+float fbm(vec2 p) {
+    float v = 0.0, a = 0.5;
+    mat2 m = mat2(1.6, 1.2, -1.2, 1.6);
+    for (int i = 0; i < 5; i++) {
+        v += a * noise(p);
+        p = m * p;
+        a *= 0.5;
+    }
+    return v;
 }
 
 float pattern(vec2 uv, float t)
@@ -38,69 +50,44 @@ float pattern(vec2 uv, float t)
 
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
-    // stuttering clock
-    float beat = floor(iTime * 2.0);
-    float h = hash(vec2(beat, 4.0));
-    float t = iTime;
-    if (h < 0.2)      t = beat * 0.5;
-    else if (h > 0.8) t += h * 10.0;
+    vec2 p = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
+    float t = iTime * 0.3;
+    float breath = 0.5 + 0.5 * sin(iTime * 0.7);
 
-    vec2 sc = fragCoord / iResolution.xy;
-
-    // collage grid that changes shape every beat
-    vec2 grid = vec2(2.0 + floor(hash(vec2(beat, 1.0)) * 3.0),
-                     1.0 + floor(hash(vec2(beat, 2.0)) * 3.0));
-    vec2 tileId = floor(sc * grid);
-    vec2 local  = fract(sc * grid);
-    float tileSeed = hash(tileId + beat * 3.1);
-    float mode = floor(tileSeed * 4.0);
-
-    // centred coords inside the tile, corrected for its shape
-    float tileAspect = (iResolution.x / grid.x) / (iResolution.y / grid.y);
-    vec2 p = (local - 0.5) * vec2(tileAspect, 1.0);
-
-    vec2 uv;
-    float tt = t;
-    if (mode < 1.0) {
-        // flat barcode wall
-        uv = local;
-    } else if (mode < 2.0) {
-        // tunnel whose centre wanders around
-        vec2 q = p - 0.25 * vec2(sin(t * 1.3), cos(t * 0.9));
-        float rad = max(length(q), 0.001);
-        uv = vec2(atan(q.y, q.x) / 6.28318 + 0.5, fract(0.15 / rad + t * 0.3));
-    } else if (mode < 3.0) {
-        // log spiral
-        float rad = max(length(p), 0.001);
-        uv = vec2(fract(atan(p.y, p.x) / 6.28318 * 3.0 + log(rad) * 0.8 - t * 0.2),
-                  fract(rad * 2.0));
-    } else {
-        // slit-scan: each row of the tile lives at a different moment in time
-        uv = local;
-        tt = t - local.y * 3.0;
+    // fold space over and over with an inversion fractal
+    // the fold constant drifts, so the structure never repeats
+    vec2 k = vec2(0.55 + 0.1 * sin(t * 0.7), 0.45 + 0.1 * cos(t * 0.53));
+    vec2 z = p * (1.5 + 0.5 * breath);
+    float trap = 1e9;
+    for (int i = 0; i < 5; i++) {
+        z = abs(z) / max(dot(z, z), 0.02) - k;
+        trap = min(trap, length(z));
     }
 
-    // melting columns that drip downwards
-    float colId = floor(fragCoord.x / 6.0);
-    float drip = step(0.8, hash(vec2(colId, floor(t * 2.0))));
-    uv.y += drip * hash(vec2(colId, 3.0)) * 0.4 * fract(t * 2.0);
+    // domain warp: noise bending noise bending noise
+    vec2 s = z * 0.5;
+    vec2 q = vec2(fbm(s + t), fbm(s + vec2(5.2, 1.3) - t));
+    vec2 r = vec2(fbm(s + 4.0 * q + vec2(1.7, 9.2) + t * 0.5),
+                  fbm(s + 4.0 * q + vec2(8.3, 2.8)));
+    float f = fbm(s + 4.0 * r);
 
-    // two clashing colours per tile, never the same one twice
-    float ia = floor(tileSeed * 37.0);
-    float ib = ia + 1.0 + floor(hash(tileId + 5.0) * 5.0);
-    float c = pattern(uv, tt);
-    vec3 col = mix(palette(ia), palette(ib), c);
+    // the barcode wall dragged through the warped space
+    // f also offsets time, so each region is at a different moment
+    float c = pattern(r * 1.5 + f * 0.5, iTime * 0.5 + f * 4.0);
 
-    // misprint: an offset ghost of the pattern knocks out some of the colour
-    float ghost = pattern(uv + vec2(0.015, 0.0), tt - 0.1);
-    col = abs(col - ghost * vec3(0.0, 0.6, 0.6));
+    // pale bone against near-black
+    vec3 col = mix(vec3(0.04, 0.02, 0.03), vec3(0.9, 0.82, 0.72), c);
+    col *= 0.4 + 0.8 * f;
 
-    // black gutters between tiles
-    vec2 edge = min(local, 1.0 - local) * iResolution.xy / grid;
-    col *= step(3.0, min(edge.x, edge.y));
+    // wet sheen where the warp folds sharply
+    float fold = clamp(length(q - r) * 1.5, 0.0, 1.0);
+    col += vec3(0.2, 0.9, 0.7) * pow(fold, 3.0);
 
-    if (hash(vec2(beat, 7.0)) > 0.9) col = 1.0 - col;
-    col *= 0.92 + 0.08 * sin(fragCoord.y * 1.5);
+    // embers caught in the fractal's folds
+    col += exp(-trap * 6.0) * vec3(1.0, 0.25, 0.05) * 0.6;
+
+    // slow ripples crawling through it
+    col *= 0.85 + 0.15 * sin(f * 20.0 - iTime * 2.0);
 
     fragColor = vec4(col, 1.0);
 }
